@@ -1,0 +1,48 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-test-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Cache Maven packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-m2-
+
+      - name: Build and Test with Maven
+        run: mvn clean verify -B
+
+      - name: Build and Push Docker Images
+        if: ${{ success() }}
+        run: |
+          # Log in to Docker Hub using secrets
+          echo "${{ secrets.DOCKERHUB_PASSWORD }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+          
+          # 5a) Build Docker images for each microservice
+          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/user-service:latest ./user-service
+          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/booking-service:latest ./table-booking-service
+          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/notification-service:latest ./notification-service
+          
+          # 5b) Push images to Docker Hub
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/user-service:latest
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/booking-service:latest
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/notification-service:latest
